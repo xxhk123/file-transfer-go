@@ -89,7 +89,7 @@ cd file-transfer-go
 docker-compose up -d
 
 # 或者直接使用 Docker 镜像
-docker run -d -p 8080:8080 --name file-transfer-go matrixseven/file-transfer:latest
+docker run -d -p 8080:8080 --name file-transfer-go matrixseven/file-transfer-go:latest
 ```
 
 ### 方式二：本地构建部署

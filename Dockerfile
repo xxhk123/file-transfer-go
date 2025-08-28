@@ -10,18 +10,19 @@ RUN apk add --no-cache yarn
 
 WORKDIR /app/chuan-next
 
-# 前端依赖和构建
-COPY chuan-next/package.json chuan-next/yarn.lock ./
-RUN yarn install --frozen-lockfile --network-timeout 300000
-
+# 复制所有源代码（确保获取最新代码）
 COPY chuan-next/ ./
 
 # 清理构建文件（模拟 build-fullstack.sh 的 clean_all 函数）
 RUN rm -rf .next out
 
+# 前端依赖和构建
+COPY chuan-next/package.json chuan-next/yarn.lock ./
+RUN yarn install --frozen-lockfile --network-timeout 300000
+
 # 临时移除 API 目录进行 SSG 构建（模拟 build-fullstack.sh 的 build_frontend 函数）
 RUN if [ -d "src/app/api" ]; then mv src/app/api /tmp/api-backup; fi && \
-    NEXT_EXPORT=true NODE_ENV=production NEXT_PUBLIC_BACKEND_URL= NEXT_PUBLIC_WS_URL= NEXT_PUBLIC_API_BASE_URL= SKIP_TYPESCRIPT_CHECK=true yarn build && \
+    NEXT_EXPORT=true NODE_ENV=production NEXT_PUBLIC_BACKEND_URL= NEXT_PUBLIC_WS_URL= NEXT_PUBLIC_API_BASE_URL= yarn build && \
     if [ -d "/tmp/api-backup" ]; then mv /tmp/api-backup src/app/api; fi
 
 # ==============================================
@@ -39,20 +40,15 @@ ENV GOARCH=amd64
 
 WORKDIR /app
 
+# 先复制所有源代码（确保获取最新代码）
+COPY . .
+
 # Go 依赖
 COPY go.mod go.sum ./
 RUN go mod download
 
-# 清理嵌入的前端文件（模拟 build-fullstack.sh 的 copy_frontend_files 函数）
-RUN mkdir -p ./internal/web/frontend && \
-    find ./internal/web/frontend -type f ! -name ".gitkeep" -delete 2>/dev/null || true
-
 # 拷贝前端构建结果
 COPY --from=frontend-builder /app/chuan-next/out ./internal/web/frontend/
-
-# Go 源码
-COPY cmd/ ./cmd/
-COPY internal/ ./internal/
 
 # 构建 Go 应用 - AMD64 架构（模拟 build-fullstack.sh 的 build_backend 函数）
 RUN go build -ldflags='-s -w -extldflags '-static'' -o server ./cmd
