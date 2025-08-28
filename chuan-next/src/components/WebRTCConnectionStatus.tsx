@@ -1,6 +1,6 @@
 import React from 'react';
 import { AlertCircle, Wifi, WifiOff, Loader2, RotateCcw } from 'lucide-react';
-import { WebRTCConnection } from '@/hooks/webrtc/useSharedWebRTCManager';
+import { WebRTCConnection } from '@/hooks/connection/useSharedWebRTCManager';
 
 interface Props {
   webrtc: WebRTCConnection;

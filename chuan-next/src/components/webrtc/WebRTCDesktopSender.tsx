@@ -2,9 +2,9 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
-import { Share, Monitor, Copy, Play, Square, Repeat, Users, Wifi, WifiOff } from 'lucide-react';
+import { Share, Monitor,  Play, Square, Repeat } from 'lucide-react';
 import { useToast } from '@/components/ui/toast-simple';
-import { useDesktopShareBusiness } from '@/hooks/webrtc/useDesktopShareBusiness';
+import { useDesktopShareBusiness } from '@/hooks/desktop-share';
 import RoomInfoDisplay from '@/components/RoomInfoDisplay';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 

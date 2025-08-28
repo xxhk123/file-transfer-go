@@ -1,68 +1,34 @@
 "use client";
 
-import React, { useState, useEffect, useCallback } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { Button } from '@/components/ui/button';
-import { Send, Download, X } from 'lucide-react';
+import React, { useState, useCallback } from 'react';
+import { useURLHandler } from '@/hooks/ui';
+import { useWebRTCStore } from '@/hooks/ui/webRTCStore';
 import { WebRTCTextSender } from '@/components/webrtc/WebRTCTextSender';
 import { WebRTCTextReceiver } from '@/components/webrtc/WebRTCTextReceiver';
-import { useWebRTCStore } from '@/hooks/webrtc/webRTCStore';
+import { Button } from '@/components/ui/button';
+import { MessageSquare, Send, Download, X } from 'lucide-react';
 
 export const WebRTCTextImageTransfer: React.FC = () => {
-  const searchParams = useSearchParams();
-  const router = useRouter();
-  
   // 状态管理
   const [mode, setMode] = useState<'send' | 'receive'>('send');
-  const [hasProcessedInitialUrl, setHasProcessedInitialUrl] = useState(false);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
   
   // 使用全局WebRTC状态
   const webrtcState = useWebRTCStore();
 
-  // 从URL参数中获取初始模式
-  useEffect(() => {
-    const urlMode = searchParams.get('mode') as 'send' | 'receive';
-    const type = searchParams.get('type');
-    const code = searchParams.get('code');
-    
-    if (!hasProcessedInitialUrl && type === 'message' && urlMode && ['send', 'receive'].includes(urlMode)) {
-      console.log('=== 处理初始URL参数 ===');
-      console.log('URL模式:', urlMode, '类型:', type, '取件码:', code);
-      
-      setMode(urlMode);
-      setHasProcessedInitialUrl(true);
-    }
-  }, [searchParams, hasProcessedInitialUrl]);
-
-  // 更新URL参数
-  const updateMode = useCallback((newMode: 'send' | 'receive') => {
-    console.log('=== 切换模式 ===', newMode);
-    
-    setMode(newMode);
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('type', 'message');
-    params.set('mode', newMode);
-    
-    if (newMode === 'send') {
-      params.delete('code');
-    }
-    
-    router.push(`?${params.toString()}`, { scroll: false });
-  }, [searchParams, router]);
+  // 使用统一的URL处理器
+  const { updateMode, getCurrentRoomCode, clearURLParams } = useURLHandler({
+    featureType: 'message',
+    onModeChange: setMode
+  });
 
   // 重新开始函数
   const handleRestart = useCallback(() => {
     setPreviewImage(null);
-    
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('type', 'message');
-    params.set('mode', mode);
-    params.delete('code');
-    router.push(`?${params.toString()}`, { scroll: false });
-  }, [searchParams, mode, router]);
+    clearURLParams();
+  }, [clearURLParams]);
 
-  const code = searchParams.get('code') || '';
+  const code = getCurrentRoomCode();
 
   // 连接状态变化处理 - 现在不需要了，因为使用全局状态
   const handleConnectionChange = useCallback((connection: any) => {

@@ -10,7 +10,7 @@ import { WebRTCTextImageTransfer } from '@/components/WebRTCTextImageTransfer';
 import DesktopShare from '@/components/DesktopShare';
 import WeChatGroup from '@/components/WeChatGroup';
 import { WebRTCUnsupportedModal } from '@/components/WebRTCUnsupportedModal';
-import { useWebRTCSupport } from '@/hooks/useWebRTCSupport';
+import { useWebRTCSupport } from '@/hooks/connection';
 
 export default function HomePage() {
   const searchParams = useSearchParams();

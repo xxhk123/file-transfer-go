@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
-import { useSharedWebRTCManager } from './useSharedWebRTCManager';
+import { useSharedWebRTCManager } from '../connection/useSharedWebRTCManager';
 
 interface DesktopShareState {
   isSharing: boolean;

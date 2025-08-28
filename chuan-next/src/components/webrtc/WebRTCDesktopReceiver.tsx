@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Monitor, Square } from 'lucide-react';
 import { useToast } from '@/components/ui/toast-simple';
-import { useDesktopShareBusiness } from '@/hooks/webrtc/useDesktopShareBusiness';
+import { useDesktopShareBusiness } from '@/hooks/desktop-share';
 import DesktopViewer from '@/components/DesktopViewer';
 import { ConnectionStatus } from '@/components/ConnectionStatus';
 
@@ -19,7 +19,6 @@ export default function WebRTCDesktopReceiver({ className, initialCode, onConnec
   const [inputCode, setInputCode] = useState(initialCode || '');
   const [isLoading, setIsLoading] = useState(false);
   const [isJoiningRoom, setIsJoiningRoom] = useState(false); // 添加加入房间状态
-  const [showDebug, setShowDebug] = useState(false);
   const hasTriedAutoJoin = React.useRef(false); // 添加 ref 来跟踪是否已尝试自动加入
   const { showToast } = useToast();
 

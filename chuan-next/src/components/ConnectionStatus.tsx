@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { cn } from '@/lib/utils';
-import { useWebRTCStore } from '@/hooks/webrtc/webRTCStore';
+import { useWebRTCStore } from '@/hooks/index';
 
 interface ConnectionStatusProps {
   // 房间信息 - 只需要这个基本信息

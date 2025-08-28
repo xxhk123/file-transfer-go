@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import { useSharedWebRTCManager } from '@/hooks/webrtc/useSharedWebRTCManager';
-import { useFileTransferBusiness } from '@/hooks/webrtc/useFileTransferBusiness';
+import { useSharedWebRTCManager, useConnectionState, useRoomConnection } from '@/hooks/connection';
+import { useFileTransferBusiness, useFileListSync, useFileStateManager } from '@/hooks/file-transfer';
+import { useURLHandler } from '@/hooks/ui';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/toast-simple';
 import { Upload, Download } from 'lucide-react';
@@ -20,29 +20,20 @@ interface FileInfo {
 }
 
 export const WebRTCFileTransfer: React.FC = () => {
-  const searchParams = useSearchParams();
-  const router = useRouter();
   const { showToast } = useToast();
   
-  // 独立的文件状态
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [fileList, setFileList] = useState<FileInfo[]>([]);
-  const [downloadedFiles, setDownloadedFiles] = useState<Map<string, File>>(new Map());
+  // 基础状态
+  const [mode, setMode] = useState<'send' | 'receive'>('send');
+  const [pickupCode, setPickupCode] = useState('');
   const [currentTransferFile, setCurrentTransferFile] = useState<{
     fileId: string;
     fileName: string;
     progress: number;
   } | null>(null);
   
-  // 房间状态
-  const [pickupCode, setPickupCode] = useState('');
-  const [mode, setMode] = useState<'send' | 'receive'>('send');
-  const [hasProcessedInitialUrl, setHasProcessedInitialUrl] = useState(false);
-  const [isJoiningRoom, setIsJoiningRoom] = useState(false); // 添加加入房间状态
-  const urlProcessedRef = useRef(false); // 使用 ref 防止重复处理 URL
   const fileInputRef = useRef<HTMLInputElement>(null);
   
-  // 创建共享连接 - 使用 useMemo 稳定引用
+  // 创建共享连接
   const connection = useSharedWebRTCManager();
   const stableConnection = useMemo(() => connection, [connection.isConnected, connection.isConnecting, connection.isWebSocketConnected, connection.error]);
   
@@ -63,266 +54,68 @@ export const WebRTCFileTransfer: React.FC = () => {
     onFileProgress
   } = useFileTransferBusiness(stableConnection);
 
-  // 加入房间 (接收模式) - 提前定义以供 useEffect 使用
+  // 使用自定义 hooks
+  const { syncFileListToReceiver } = useFileListSync({
+    sendFileList,
+    mode,
+    pickupCode,
+    isConnected,
+    isPeerConnected: connection.isPeerConnected,
+    getChannelState: connection.getChannelState
+  });
+
+  const {
+    selectedFiles,
+    setSelectedFiles,
+    fileList,
+    setFileList,
+    downloadedFiles,
+    setDownloadedFiles,
+    handleFileSelect,
+    clearFiles,
+    resetFiles,
+    updateFileStatus,
+    updateFileProgress
+  } = useFileStateManager({
+    mode,
+    pickupCode,
+    syncFileListToReceiver,
+    isPeerConnected: connection.isPeerConnected
+  });
+
+  const { joinRoom: originalJoinRoom, isJoiningRoom } = useRoomConnection({
+    connect,
+    isConnecting,
+    isConnected
+  });
+
+  // 包装joinRoom函数以便设置pickupCode
   const joinRoom = useCallback(async (code: string) => {
-    console.log('=== 加入房间 ===');
-    console.log('取件码:', code);
-    
-    const trimmedCode = code.trim();
-    
-    // 检查取件码格式
-    if (!trimmedCode || trimmedCode.length !== 6) {
-      showToast('请输入正确的6位取件码', "error");
-      return;
-    }
+    setPickupCode(code);
+    await originalJoinRoom(code);
+  }, [originalJoinRoom]);
 
-    // 防止重复调用 - 检查是否已经在连接或已连接
-    if (isConnecting || isConnected || isJoiningRoom) {
-      console.log('已在连接中或已连接，跳过重复的房间状态检查');
-      return;
-    }
-    
-    setIsJoiningRoom(true);
-    
-    try {
-      // 先检查房间状态
-      console.log('检查房间状态...');
-      
-      const response = await fetch(`/api/room-info?code=${trimmedCode}`);
-      
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: 无法检查房间状态`);
-      }
-      
-      const result = await response.json();
-      
-      if (!result.success) {
-        let errorMessage = result.message || '房间不存在或已过期';
-        if (result.message?.includes('expired')) {
-          errorMessage = '房间已过期，请联系发送方重新创建';
-        } else if (result.message?.includes('not found')) {
-          errorMessage = '房间不存在，请检查取件码是否正确';
-        }
-        showToast(errorMessage, "error");
-        return;
-      }
-      
-      // 检查发送方是否在线 (使用新的字段名)
-      if (!result.sender_online) {
-        showToast('发送方不在线，请确认取件码是否正确或联系发送方', "error");
-        return;
-      }
-      
-      console.log('房间状态检查通过，开始连接...');
-      setPickupCode(trimmedCode);
-      
-      connect(trimmedCode, 'receiver');
-      
-      showToast(`正在连接到房间: ${trimmedCode}`, "success");
-    } catch (error) {
-      console.error('检查房间状态失败:', error);
-      let errorMessage = '检查房间状态失败';
-      
-      if (error instanceof Error) {
-        if (error.message.includes('network') || error.message.includes('fetch')) {
-          errorMessage = '网络连接失败，请检查网络状况';
-        } else if (error.message.includes('timeout')) {
-          errorMessage = '请求超时，请重试';
-        } else if (error.message.includes('HTTP 404')) {
-          errorMessage = '房间不存在，请检查取件码';
-        } else if (error.message.includes('HTTP 500')) {
-          errorMessage = '服务器错误，请稍后重试';
-        } else {
-          errorMessage = error.message;
-        }
-      }
-      
-      showToast(errorMessage, "error");
-    } finally {
-      setIsJoiningRoom(false); // 重置加入房间状态
-    }
-  }, [isConnecting, isConnected, isJoiningRoom, showToast, connect]); // 添加isJoiningRoom依赖
+  const { updateMode } = useURLHandler({
+    featureType: 'webrtc',
+    onModeChange: setMode,
+    onAutoJoinRoom: joinRoom
+  });
 
-  // 从URL参数中获取初始模式（仅在首次加载时处理）
-  useEffect(() => {
-    // 使用 ref 确保只处理一次，避免严格模式的重复调用
-    if (urlProcessedRef.current) {
-      console.log('URL已处理过，跳过重复处理');
-      return;
-    }
-
-    const urlMode = searchParams.get('mode') as 'send' | 'receive';
-    const type = searchParams.get('type');
-    const code = searchParams.get('code');
-    
-    // 只在首次加载且URL中有webrtc类型时处理
-    if (!hasProcessedInitialUrl && type === 'webrtc' && urlMode && ['send', 'receive'].includes(urlMode)) {
-      console.log('=== 处理初始URL参数 ===');
-      console.log('URL模式:', urlMode, '类型:', type, '取件码:', code);
-      
-      // 立即标记为已处理，防止重复
-      urlProcessedRef.current = true;
-      
-      setMode(urlMode);
-      setHasProcessedInitialUrl(true);
-      
-      if (code && urlMode === 'receive') {
-        console.log('URL中有取件码，自动加入房间');
-        // 防止重复调用 - 检查连接状态和加入房间状态
-        if (!isConnecting && !isConnected && !isJoiningRoom) {
-          // 直接调用异步函数，不依赖 joinRoom
-          const autoJoinRoom = async () => {
-            const trimmedCode = code.trim();
-            
-            if (!trimmedCode || trimmedCode.length !== 6) {
-              showToast('请输入正确的6位取件码', "error");
-              return;
-            }
-
-            setIsJoiningRoom(true);
-            
-            try {
-              console.log('检查房间状态...');
-              const response = await fetch(`/api/room-info?code=${trimmedCode}`);
-              
-              if (!response.ok) {
-                throw new Error(`HTTP ${response.status}: 无法检查房间状态`);
-              }
-              
-              const result = await response.json();
-              
-              if (!result.success) {
-                let errorMessage = result.message || '房间不存在或已过期';
-                if (result.message?.includes('expired')) {
-                  errorMessage = '房间已过期，请联系发送方重新创建';
-                } else if (result.message?.includes('not found')) {
-                  errorMessage = '房间不存在，请检查取件码是否正确';
-                }
-                showToast(errorMessage, "error");
-                return;
-              }
-              
-              if (!result.sender_online) {
-                showToast('发送方不在线，请确认取件码是否正确或联系发送方', "error");
-                return;
-              }
-              
-              console.log('房间状态检查通过，开始连接...');
-              setPickupCode(trimmedCode);
-              connect(trimmedCode, 'receiver');
-              showToast(`正在连接到房间: ${trimmedCode}`, "success");
-            } catch (error) {
-              console.error('检查房间状态失败:', error);
-              let errorMessage = '检查房间状态失败';
-              
-              if (error instanceof Error) {
-                if (error.message.includes('network') || error.message.includes('fetch')) {
-                  errorMessage = '网络连接失败，请检查网络状况';
-                } else if (error.message.includes('timeout')) {
-                  errorMessage = '请求超时，请重试';
-                } else if (error.message.includes('HTTP 404')) {
-                  errorMessage = '房间不存在，请检查取件码';
-                } else if (error.message.includes('HTTP 500')) {
-                  errorMessage = '服务器错误，请稍后重试';
-                } else {
-                  errorMessage = error.message;
-                }
-              }
-              
-              showToast(errorMessage, "error");
-            } finally {
-              setIsJoiningRoom(false);
-            }
-          };
-          
-          autoJoinRoom();
-        } else {
-          console.log('已在连接中或加入房间中，跳过重复处理');
-        }
-      }
-    }
-  }, [searchParams, hasProcessedInitialUrl, isConnecting, isConnected, isJoiningRoom, showToast, connect]); // 添加isJoiningRoom依赖
-
-  // 更新URL参数
-  const updateMode = useCallback((newMode: 'send' | 'receive') => {
-    console.log('=== 手动切换模式 ===');
-    console.log('新模式:', newMode);
-    
-    setMode(newMode);
-    const params = new URLSearchParams(searchParams.toString());
-    params.set('type', 'webrtc');
-    params.set('mode', newMode);
-    
-    // 如果切换到发送模式，移除code参数
-    if (newMode === 'send') {
-      params.delete('code');
-    }
-    
-    router.push(`?${params.toString()}`, { scroll: false });
-  }, [searchParams, router]);
+  useConnectionState({
+    isWebSocketConnected,
+    isConnected,
+    isConnecting,
+    error: error || '',
+    pickupCode,
+    fileListLength: fileList.length,
+    currentTransferFile,
+    setCurrentTransferFile,
+    updateFileListStatus: setFileList
+  });
 
   // 生成文件ID
   const generateFileId = () => {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
-  };
-
-  // 文件列表同步防抖标志
-  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  // 统一的文件列表同步函数，带防抖功能
-  const syncFileListToReceiver = useCallback((fileInfos: FileInfo[], reason: string) => {
-    // 只有在发送模式、连接已建立且有房间时才发送文件列表
-    if (mode !== 'send' || !pickupCode || !isConnected || !connection.isPeerConnected) {
-      console.log('跳过文件列表同步:', { mode, pickupCode: !!pickupCode, isConnected, isPeerConnected: connection.isPeerConnected });
-      return;
-    }
-
-    // 清除之前的延时发送
-    if (syncTimeoutRef.current) {
-      clearTimeout(syncTimeoutRef.current);
-    }
-
-    // 延时发送，避免频繁发送
-    syncTimeoutRef.current = setTimeout(() => {
-      if (connection.isPeerConnected && connection.getChannelState() === 'open') {
-        console.log(`发送文件列表到接收方 (${reason}):`, fileInfos.map(f => f.name));
-        sendFileList(fileInfos);
-      }
-    }, 150);
-  }, [mode, pickupCode, isConnected, connection.isPeerConnected, connection.getChannelState, sendFileList]);
-
-  // 清理防抖定时器
-  useEffect(() => {
-    return () => {
-      if (syncTimeoutRef.current) {
-        clearTimeout(syncTimeoutRef.current);
-      }
-    };
-  }, []);
-
-  // 文件选择处理
-  const handleFileSelect = (files: File[]) => {
-    console.log('=== 文件选择 ===');
-    console.log('新文件:', files.map(f => f.name));
-    
-    // 更新选中的文件
-    setSelectedFiles(prev => [...prev, ...files]);
-    
-    // 创建对应的文件信息
-    const newFileInfos: FileInfo[] = files.map(file => ({
-      id: generateFileId(),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      status: 'ready',
-      progress: 0
-    }));
-    
-    setFileList(prev => {
-      const updatedList = [...prev, ...newFileInfos];
-      console.log('更新后的文件列表:', updatedList);
-      return updatedList;
-    });
   };
 
   // 创建房间 (发送模式)
@@ -390,23 +183,17 @@ export const WebRTCFileTransfer: React.FC = () => {
     
     // 清空状态
     setPickupCode('');
-    setFileList([]);
-    setDownloadedFiles(new Map());
+    resetFiles();
     
-    // 如果是接收模式，更新URL移除code参数
-    if (mode === 'receive') {
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete('code');
-      router.push(`?${params.toString()}`, { scroll: false });
-    }
+    // 如果是接收模式，需要手动更新URL
+    // URL处理逻辑已经移到 hook 中
   };
 
-  // 处理文件列表更新
+    // 处理文件列表更新
   useEffect(() => {
     const cleanup = onFileListReceived((fileInfos: FileInfo[]) => {
       console.log('=== 收到文件列表更新 ===');
       console.log('文件列表:', fileInfos);
-      console.log('当前模式:', mode);
       
       if (mode === 'receive') {
         setFileList(fileInfos);
@@ -415,6 +202,99 @@ export const WebRTCFileTransfer: React.FC = () => {
 
     return cleanup;
   }, [onFileListReceived, mode]);
+
+  // 处理文件接收
+  useEffect(() => {
+    const cleanup = onFileReceived((fileData: { id: string; file: File }) => {
+      console.log('=== 接收到文件 ===');
+      console.log('文件:', fileData.file.name, 'ID:', fileData.id);
+      
+      // 更新下载的文件
+      setDownloadedFiles(prev => new Map(prev.set(fileData.id, fileData.file)));
+      
+      // 更新文件状态
+      updateFileStatus(fileData.id, 'completed', 100);
+    });
+
+    return cleanup;
+  }, [onFileReceived, updateFileStatus]);
+
+  // 监听文件级别的进度更新
+  useEffect(() => {
+    const cleanup = onFileProgress((progressInfo) => {
+      // 检查连接状态，如果连接断开则忽略进度更新
+      if (!isConnected || error) {
+        console.log('连接已断开，忽略进度更新:', progressInfo.fileName);
+        return;
+      }
+
+      console.log('=== 文件进度更新 ===');
+      console.log('文件:', progressInfo.fileName, 'ID:', progressInfo.fileId, '进度:', progressInfo.progress);
+      
+      // 更新当前传输文件信息
+      setCurrentTransferFile({
+        fileId: progressInfo.fileId,
+        fileName: progressInfo.fileName,
+        progress: progressInfo.progress
+      });
+      
+      // 更新文件进度
+      updateFileProgress(progressInfo.fileId, progressInfo.fileName, progressInfo.progress);
+      
+      // 当传输完成时清理
+      if (progressInfo.progress >= 100 && mode === 'send') {
+        setCurrentTransferFile(null);
+      }
+    });
+
+    return cleanup;
+  }, [onFileProgress, mode, isConnected, error, updateFileProgress]);
+
+  // 处理文件请求（发送方监听）
+  useEffect(() => {
+    const cleanup = onFileRequested((fileId: string, fileName: string) => {
+      console.log('=== 收到文件请求 ===');
+      console.log('文件:', fileName, 'ID:', fileId, '当前模式:', mode);
+      
+      if (mode === 'send') {
+        // 检查连接状态
+        if (!isConnected || error) {
+          console.log('连接已断开，无法发送文件');
+          showToast('连接已断开，无法发送文件', "error");
+          return;
+        }
+
+        // 在发送方的selectedFiles中查找对应文件
+        const file = selectedFiles.find(f => f.name === fileName);
+        
+        if (!file) {
+          console.error('找不到匹配的文件:', fileName);
+          showToast(`无法找到文件: ${fileName}`, "error");
+          return;
+        }
+        
+        console.log('找到匹配文件，开始发送:', file.name, 'ID:', fileId, '文件大小:', file.size);
+        
+        // 更新发送方文件状态为downloading
+        updateFileStatus(fileId, 'downloading', 0);
+        
+        // 发送文件
+        try {
+          sendFile(file, fileId);
+        } catch (sendError) {
+          console.error('发送文件失败:', sendError);
+          showToast(`发送文件失败: ${fileName}`, "error");
+          
+          // 重置文件状态
+          updateFileStatus(fileId, 'ready', 0);
+        }
+      } else {
+        console.warn('接收模式下收到文件请求，忽略');
+      }
+    });
+
+    return cleanup;
+  }, [onFileRequested, mode, selectedFiles, sendFile, isConnected, error, showToast, updateFileStatus]);
 
   // 处理连接错误
   const [lastError, setLastError] = useState<string>('');
@@ -481,52 +361,6 @@ export const WebRTCFileTransfer: React.FC = () => {
 
     return cleanup;
   }, [onFileReceived]);
-
-  // 监听文件级别的进度更新
-  useEffect(() => {
-    const cleanup = onFileProgress((progressInfo) => {
-      // 检查连接状态，如果连接断开则忽略进度更新
-      if (!isConnected || error) {
-        console.log('连接已断开，忽略进度更新:', progressInfo.fileName);
-        return;
-      }
-
-      console.log('=== 文件进度更新 ===');
-      console.log('文件:', progressInfo.fileName, 'ID:', progressInfo.fileId, '进度:', progressInfo.progress);
-      
-      // 更新当前传输文件信息
-      setCurrentTransferFile({
-        fileId: progressInfo.fileId,
-        fileName: progressInfo.fileName,
-        progress: progressInfo.progress
-      });
-      
-      // 更新文件列表中对应文件的进度
-      setFileList(prev => prev.map(item => {
-        if (item.id === progressInfo.fileId || item.name === progressInfo.fileName) {
-          const newProgress = progressInfo.progress;
-          const newStatus = newProgress >= 100 ? 'completed' as const : 'downloading' as const;
-          
-          console.log(`更新文件 ${item.name} 进度: ${item.progress} -> ${newProgress}`);
-          return { ...item, progress: newProgress, status: newStatus };
-        }
-        return item;
-      }));
-      
-      // 当传输完成时显示提示
-      if (progressInfo.progress >= 100 && mode === 'send') {
-        // 移除不必要的Toast - 传输完成状态在UI中已经显示
-        setCurrentTransferFile(null);
-      }
-    });
-
-    return cleanup;
-  }, [onFileProgress, mode, isConnected, error]);
-
-  // 实时更新传输进度（旧逻辑 - 删除）
-  // useEffect(() => {
-  //   ...已删除的旧代码...
-  // }, [...]);
 
   // 处理文件请求（发送方监听）
   useEffect(() => {
@@ -790,13 +624,6 @@ export const WebRTCFileTransfer: React.FC = () => {
   // 添加更多文件
   const addMoreFiles = () => {
     fileInputRef.current?.click();
-  };
-
-  // 清空文件
-  const clearFiles = () => {
-    console.log('=== 清空文件 ===');
-    setSelectedFiles([]);
-    setFileList([]);
   };
 
   // 下载文件到本地

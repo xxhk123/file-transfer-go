@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { WebRTCConnection } from './useSharedWebRTCManager';
+import type { WebRTCConnection } from '../connection/useSharedWebRTCManager';
 
 // 文件传输状态
 interface FileTransferState {
@@ -17,7 +17,6 @@ interface FileTransferState {
 interface FileReceiveProgress {
   fileId: string;
   fileName: string;
-  receivedChunks: number;
   totalChunks: number;
   progress: number;
 }
@@ -178,7 +177,6 @@ export function useFileTransferBusiness(connection: WebRTCConnection) {
         receiveProgress.current.set(metadata.id, {
           fileId: metadata.id,
           fileName: metadata.name,
-          receivedChunks: 0,
           totalChunks,
           progress: 0
         });
@@ -301,16 +299,22 @@ export function useFileTransferBusiness(connection: WebRTCConnection) {
         return;
       }
 
+      // 检查是否已经接收过这个块，避免重复计数
+      const alreadyReceived = fileInfo.chunks[chunkIndex] !== undefined;
+      
       // 数据有效，保存到缓存
       fileInfo.chunks[chunkIndex] = data;
-      fileInfo.receivedChunks++;
+      
+      // 只有在首次接收时才增加计数
+      if (!alreadyReceived) {
+        fileInfo.receivedChunks++;
+      }
 
-      // 更新接收进度跟踪
+      // 更新接收进度跟踪 - 使用 fileInfo 的计数，避免双重计数
       const progressInfo = receiveProgress.current.get(fileId);
       if (progressInfo) {
-        progressInfo.receivedChunks++;
         progressInfo.progress = progressInfo.totalChunks > 0 ?
-          (progressInfo.receivedChunks / progressInfo.totalChunks) * 100 : 0;
+          (fileInfo.receivedChunks / progressInfo.totalChunks) * 100 : 0;
 
         // 只有当这个文件是当前活跃文件时才更新全局进度
         if (activeReceiveFile.current === fileId) {
@@ -537,8 +541,8 @@ export function useFileTransferBusiness(connection: WebRTCConnection) {
           }
         }
 
-        // 更新进度
-        const progress = (status.acknowledgedChunks.size / totalChunks) * 100;
+        // 更新进度 - 基于已发送的块数，这样与接收方的进度更同步
+        const progress = ((chunkIndex + 1) / totalChunks) * 100;
         updateState({ progress });
 
         fileProgressCallbacks.current.forEach(cb => cb({

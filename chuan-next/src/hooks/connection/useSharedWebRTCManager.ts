@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { getWsUrl } from '@/lib/config';
-import { useWebRTCStore } from './webRTCStore';
+import { useWebRTCStore } from '../ui/webRTCStore';
 
 // 基础连接状态
 interface WebRTCState {

@@ -1,9 +1,9 @@
 "use client";
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { useSharedWebRTCManager } from '@/hooks/webrtc/useSharedWebRTCManager';
-import { useTextTransferBusiness } from '@/hooks/webrtc/useTextTransferBusiness';
-import { useFileTransferBusiness } from '@/hooks/webrtc/useFileTransferBusiness';
+import { useSharedWebRTCManager } from '@/hooks/connection';
+import { useTextTransferBusiness } from '@/hooks/text-transfer';
+import { useFileTransferBusiness } from '@/hooks/file-transfer';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast-simple';

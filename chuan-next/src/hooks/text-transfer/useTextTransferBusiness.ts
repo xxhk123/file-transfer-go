@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import type { WebRTCConnection } from './useSharedWebRTCManager';
+import type { WebRTCConnection } from '../connection/useSharedWebRTCManager';
 
 // 文本传输状态
 interface TextTransferState {

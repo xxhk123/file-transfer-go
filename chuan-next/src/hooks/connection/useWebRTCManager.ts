@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { WebRTCManager } from './core/WebRTCManager';
-import { WebRTCConnectionState, WebRTCMessage, MessageHandler, DataHandler } from './core/types';
+import { WebRTCManager } from '../webrtc/WebRTCManager';
+import { WebRTCConnectionState, WebRTCMessage, MessageHandler, DataHandler } from '../webrtc/types';
 import { WebRTCConnection } from './useSharedWebRTCManager';
 
 interface WebRTCManagerConfig {
