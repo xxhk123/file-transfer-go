@@ -762,15 +762,32 @@ export function useSharedWebRTCManager(): WebRTCConnection {
     const pc = pcRef.current;
     if (!pc) {
       console.warn('[SharedWebRTC] PeerConnection 尚未准备就绪，将在连接建立后设置onTrack');
+      // 检查WebSocket连接状态，只有连接后才尝试设置
+      if (!webrtcStore.isWebSocketConnected) {
+        console.log('[SharedWebRTC] WebSocket未连接，等待连接建立...');
+        return;
+      }
+      
       // 延迟设置，等待PeerConnection准备就绪
+      let retryCount = 0;
+      const maxRetries = 30; // 最多重试30次，即3秒
+      
       const checkAndSetTrackHandler = () => {
         const currentPc = pcRef.current;
         if (currentPc) {
           console.log('[SharedWebRTC] ✅ PeerConnection 已准备就绪，设置onTrack处理器');
           currentPc.ontrack = handler;
         } else {
-          console.log('[SharedWebRTC] ⏳ 等待PeerConnection准备就绪...');
-          setTimeout(checkAndSetTrackHandler, 100);
+          retryCount++;
+          if (retryCount < maxRetries) {
+            // 只在偶数次重试时输出日志，减少日志数量
+            if (retryCount % 2 === 0) {
+              console.log(`[SharedWebRTC] ⏳ 等待PeerConnection准备就绪... (尝试: ${retryCount}/${maxRetries})`);
+            }
+            setTimeout(checkAndSetTrackHandler, 100);
+          } else {
+            console.error('[SharedWebRTC] ❌ PeerConnection 长时间未准备就绪，停止重试');
+          }
         }
       };
       checkAndSetTrackHandler();
@@ -779,7 +796,7 @@ export function useSharedWebRTCManager(): WebRTCConnection {
     
     console.log('[SharedWebRTC] ✅ 立即设置onTrack处理器');
     pc.ontrack = handler;
-  }, []);
+  }, [webrtcStore.isWebSocketConnected]);
 
   // 获取PeerConnection实例
   const getPeerConnection = useCallback(() => {

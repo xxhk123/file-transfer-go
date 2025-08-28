@@ -42,6 +42,7 @@ interface WebRTCFileReceiveProps {
   downloadedFiles?: Map<string, File>;
   error?: string | null;
   onReset?: () => void;
+  pickupCode?: string;
 }
 
 export function WebRTCFileReceive({
@@ -53,11 +54,15 @@ export function WebRTCFileReceive({
   isWebSocketConnected = false,
   downloadedFiles,
   error = null,
-  onReset
+  onReset,
+  pickupCode: propPickupCode
 }: WebRTCFileReceiveProps) {
   const [pickupCode, setPickupCode] = useState('');
   const [isValidating, setIsValidating] = useState(false);
   const { showToast } = useToast();
+
+  // 使用传入的取件码或本地状态的取件码
+  const displayPickupCode = propPickupCode || pickupCode;
 
   // 验证取件码是否存在
   const validatePickupCode = async (code: string): Promise<boolean> => {
@@ -141,13 +146,13 @@ export function WebRTCFileReceive({
               </div>
               <div>
                 <h3 className="text-lg font-semibold text-slate-800">文件接收中</h3>
-                <p className="text-sm text-slate-600">取件码: {pickupCode}</p>
+                <p className="text-sm text-slate-600">取件码: {displayPickupCode}</p>
               </div>
             </div>
             
             <div className="flex items-center space-x-4">
               <ConnectionStatus 
-                currentRoom={pickupCode ? { code: pickupCode, role: 'receiver' } : null}
+                currentRoom={displayPickupCode ? { code: displayPickupCode, role: 'receiver' } : null}
               />
               
               <Button
@@ -202,14 +207,14 @@ export function WebRTCFileReceive({
             </div>
             <div>
               <h3 className="text-lg font-semibold text-slate-800">可下载文件</h3>
-              <p className="text-sm text-slate-600">房间代码: {pickupCode}</p>
+              <p className="text-sm text-slate-600">房间代码: {displayPickupCode}</p>
             </div>
           </div>
           
           {/* 连接状态 */}
           <ConnectionStatus 
 
-            currentRoom={{ code: pickupCode, role: 'receiver' }}
+            currentRoom={{ code: displayPickupCode, role: 'receiver' }}
           />
         </div>
         

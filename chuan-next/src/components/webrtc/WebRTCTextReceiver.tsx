@@ -297,12 +297,14 @@ export const WebRTCTextReceiver: React.FC<WebRTCTextReceiverProps> = ({
               )}
             </div>
 
-            <div className="min-h-[200px] bg-slate-50/50 rounded-xl p-4 border border-slate-100">
+            <div className="min-h-[200px] bg-slate-50/50 rounded-xl p-4 border border-slate-100 overflow-hidden">
               {receivedText ? (
-                <div className="space-y-2">
-                  <pre className="whitespace-pre-wrap text-slate-700 text-sm leading-relaxed font-sans">
-                    {receivedText}
-                  </pre>
+                <div className="space-y-2 h-full">
+                  <div className="overflow-auto max-h-[180px]">
+                    <pre className="whitespace-pre-wrap break-words text-slate-700 text-sm leading-relaxed font-sans">
+                      {receivedText}
+                    </pre>
+                  </div>
                   {isTyping && (
                     <div className="flex items-center space-x-2 text-slate-500 text-sm">
                       <div className="flex space-x-1">

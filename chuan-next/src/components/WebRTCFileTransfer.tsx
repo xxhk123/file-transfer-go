@@ -266,6 +266,40 @@ export const WebRTCFileTransfer: React.FC = () => {
     return Date.now().toString(36) + Math.random().toString(36).substr(2);
   };
 
+  // 文件列表同步防抖标志
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // 统一的文件列表同步函数，带防抖功能
+  const syncFileListToReceiver = useCallback((fileInfos: FileInfo[], reason: string) => {
+    // 只有在发送模式、连接已建立且有房间时才发送文件列表
+    if (mode !== 'send' || !pickupCode || !isConnected || !connection.isPeerConnected) {
+      console.log('跳过文件列表同步:', { mode, pickupCode: !!pickupCode, isConnected, isPeerConnected: connection.isPeerConnected });
+      return;
+    }
+
+    // 清除之前的延时发送
+    if (syncTimeoutRef.current) {
+      clearTimeout(syncTimeoutRef.current);
+    }
+
+    // 延时发送，避免频繁发送
+    syncTimeoutRef.current = setTimeout(() => {
+      if (connection.isPeerConnected && connection.getChannelState() === 'open') {
+        console.log(`发送文件列表到接收方 (${reason}):`, fileInfos.map(f => f.name));
+        sendFileList(fileInfos);
+      }
+    }, 150);
+  }, [mode, pickupCode, isConnected, connection.isPeerConnected, connection.getChannelState, sendFileList]);
+
+  // 清理防抖定时器
+  useEffect(() => {
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // 文件选择处理
   const handleFileSelect = (files: File[]) => {
     console.log('=== 文件选择 ===');
@@ -287,13 +321,6 @@ export const WebRTCFileTransfer: React.FC = () => {
     setFileList(prev => {
       const updatedList = [...prev, ...newFileInfos];
       console.log('更新后的文件列表:', updatedList);
-      
-      // 如果P2P连接已建立，立即同步文件列表
-      if (isConnected && connection.isPeerConnected && pickupCode) {
-        console.log('立即同步文件列表到对端');
-        setTimeout(() => sendFileList(updatedList), 100);
-      }
-      
       return updatedList;
     });
   };
@@ -560,29 +587,46 @@ export const WebRTCFileTransfer: React.FC = () => {
     return cleanup;
   }, [onFileRequested, mode, selectedFiles, sendFile, isConnected, error]);
 
-  // 监听WebSocket连接状态变化
+  // 监听连接状态变化和清理传输状态
   useEffect(() => {
-    console.log('=== WebSocket状态变化 ===');
+    console.log('=== 连接状态变化 ===');
     console.log('WebSocket连接状态:', isWebSocketConnected);
     console.log('WebRTC连接状态:', isConnected);
     console.log('连接中状态:', isConnecting);
     
-    // 只有在之前已经建立过连接，现在断开的情况下才显示断开提示
-    // 避免在初始连接时误报断开
-    if (!isWebSocketConnected && !isConnected && !isConnecting && pickupCode) {
-      // 增加额外检查：只有在之前曾经连接成功过的情况下才显示断开提示
-      // 通过检查是否有文件列表来判断是否曾经连接过
-      if (fileList.length > 0 || currentTransferFile) {
-        showToast('与服务器的连接已断开，请重新连接', "error");
+    // 当连接断开或有错误时，清理所有传输状态
+    const shouldCleanup = (!isWebSocketConnected && !isConnected && !isConnecting && pickupCode) || 
+                         ((!isConnected && !isConnecting) || error);
+    
+    if (shouldCleanup) {
+      const hasCurrentTransfer = !!currentTransferFile;
+      const hasFileList = fileList.length > 0;
+      
+      // 只有在之前有连接活动时才显示断开提示和清理状态
+      if (hasFileList || hasCurrentTransfer) {
+        if (!isWebSocketConnected && pickupCode) {
+          showToast('与服务器的连接已断开，请重新连接', "error");
+        }
         
-        // 清理传输状态
-        console.log('WebSocket断开，清理传输状态');
-        setCurrentTransferFile(null);
-        setFileList(prev => prev.map(item => 
-          item.status === 'downloading' 
-            ? { ...item, status: 'ready' as const, progress: 0 }
-            : item
-        ));
+        console.log('连接断开，清理传输状态');
+        
+        if (currentTransferFile) {
+          setCurrentTransferFile(null);
+        }
+        
+        // 重置所有正在下载的文件状态
+        setFileList(prev => {
+          const hasDownloadingFiles = prev.some(item => item.status === 'downloading');
+          if (hasDownloadingFiles) {
+            console.log('重置正在传输的文件状态');
+            return prev.map(item => 
+              item.status === 'downloading' 
+                ? { ...item, status: 'ready' as const, progress: 0 }
+                : item
+            );
+          }
+          return prev;
+        });
       }
     }
     
@@ -591,34 +635,9 @@ export const WebRTCFileTransfer: React.FC = () => {
       console.log('WebSocket已连接，正在建立P2P连接...');
     }
     
-  }, [isWebSocketConnected, isConnected, isConnecting, pickupCode, showToast, fileList.length, currentTransferFile]);
+  }, [isWebSocketConnected, isConnected, isConnecting, pickupCode, error, showToast, currentTransferFile, fileList.length]);
 
-  // 监听连接状态变化，清理传输状态
-  useEffect(() => {
-    // 当连接断开或有错误时，清理所有传输状态
-    if ((!isConnected && !isConnecting) || error) {
-      if (currentTransferFile) {
-        console.log('连接断开，清理当前传输文件状态:', currentTransferFile.fileName);
-        setCurrentTransferFile(null);
-      }
-      
-      // 重置所有正在下载的文件状态
-      setFileList(prev => {
-        const hasDownloadingFiles = prev.some(item => item.status === 'downloading');
-        if (hasDownloadingFiles) {
-          console.log('重置正在传输的文件状态');
-          return prev.map(item => 
-            item.status === 'downloading' 
-              ? { ...item, status: 'ready' as const, progress: 0 }
-              : item
-          );
-        }
-        return prev;
-      });
-    }
-  }, [isConnected, isConnecting, error, currentTransferFile]);
-
-  // 监听连接状态变化并提供用户反馈
+  // 监听连接状态变化并提供日志
   useEffect(() => {
     console.log('=== WebRTC连接状态变化 ===');
     console.log('连接状态:', {
@@ -630,65 +649,66 @@ export const WebRTCFileTransfer: React.FC = () => {
       selectedFilesCount: selectedFiles.length,
       fileListCount: fileList.length
     });
-    
-    // 连接成功时的提示
-    if (isConnected && !isConnecting) {
-      if (mode === 'send') {
-        // 移除不必要的Toast - 连接状态在UI中已经显示
-      } else {
-        // 移除不必要的Toast - 连接状态在UI中已经显示
-      }
-    }
-    
-    // 连接中的状态
-    if (isConnecting && pickupCode) {
-      console.log('正在建立WebRTC连接...');
-    }
-    
-    // 只有在P2P连接建立且没有错误时才发送文件列表
-    if (isConnected && connection.isPeerConnected && !error && pickupCode && mode === 'send' && selectedFiles.length > 0) {
-      // 确保有文件列表
-      if (fileList.length === 0) {
-        console.log('创建文件列表并发送...');
-        const newFileInfos: FileInfo[] = selectedFiles.map(file => ({
-          id: generateFileId(),
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          status: 'ready',
-          progress: 0
-        }));
-        setFileList(newFileInfos);
-        // 延迟发送，确保数据通道已准备好
-        setTimeout(() => {
-          if (isConnected && connection.isPeerConnected && !error) { // 再次检查连接状态
-            sendFileList(newFileInfos);
-          }
-        }, 500);
-      } else if (fileList.length > 0) {
-        console.log('发送现有文件列表...');
-        // 延迟发送，确保数据通道已准备好
-        setTimeout(() => {
-          if (isConnected && connection.isPeerConnected && !error) { // 再次检查连接状态
-            sendFileList(fileList);
-          }
-        }, 500);
-      }
-    }
-  }, [isConnected, connection.isPeerConnected, isConnecting, isWebSocketConnected, pickupCode, mode, selectedFiles.length, error]);
+  }, [isConnected, connection.isPeerConnected, isConnecting, isWebSocketConnected, pickupCode, mode, selectedFiles.length, fileList.length]);
 
-  // 监听P2P连接建立，自动发送文件列表
+  // 监听P2P连接建立时的状态变化
   useEffect(() => {
     if (connection.isPeerConnected && mode === 'send' && fileList.length > 0) {
-      console.log('P2P连接已建立，发送文件列表...');
-      // 稍微延迟一下，确保数据通道完全准备好
-      setTimeout(() => {
-        if (connection.isPeerConnected && connection.getChannelState() === 'open') {
-          sendFileList(fileList);
-        }
-      }, 200);
+      console.log('P2P连接已建立，数据通道首次打开，初始化文件列表');
+      // 数据通道第一次打开时进行初始化
+      syncFileListToReceiver(fileList, '数据通道初始化');
     }
-  }, [connection.isPeerConnected, mode, fileList.length, sendFileList]);
+  }, [connection.isPeerConnected, mode, syncFileListToReceiver]);
+
+  // 监听fileList大小变化并同步
+  useEffect(() => {
+    if (connection.isPeerConnected && mode === 'send' && pickupCode) {
+      console.log('fileList大小变化，同步到接收方:', fileList.length);
+      syncFileListToReceiver(fileList, 'fileList大小变化');
+    }
+  }, [fileList.length, connection.isPeerConnected, mode, pickupCode, syncFileListToReceiver]);
+
+  // 监听selectedFiles变化，同步更新fileList并发送给接收方
+  useEffect(() => {
+    // 只有在发送模式下且已有房间时才处理文件列表同步
+    if (mode !== 'send' || !pickupCode) return;
+
+    console.log('=== selectedFiles变化，同步文件列表 ===', {
+      selectedFilesCount: selectedFiles.length,
+      fileListCount: fileList.length,
+      selectedFileNames: selectedFiles.map(f => f.name)
+    });
+
+    // 根据selectedFiles创建新的文件信息列表
+    const newFileInfos: FileInfo[] = selectedFiles.map(file => {
+      // 尝试找到现有的文件信息，保持已有的状态
+      const existingFileInfo = fileList.find(info => info.name === file.name && info.size === file.size);
+      return existingFileInfo || {
+        id: generateFileId(),
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        status: 'ready' as const,
+        progress: 0
+      };
+    });
+
+    // 检查文件列表是否真正发生变化
+    const fileListChanged = 
+      newFileInfos.length !== fileList.length ||
+      newFileInfos.some(newFile => 
+        !fileList.find(oldFile => oldFile.name === newFile.name && oldFile.size === newFile.size)
+      );
+
+    if (fileListChanged) {
+      console.log('文件列表发生变化，更新:', {
+        before: fileList.map(f => f.name),
+        after: newFileInfos.map(f => f.name)
+      });
+      
+      setFileList(newFileInfos);
+    }
+  }, [selectedFiles, mode, pickupCode]);
 
   // 请求下载文件（接收方调用）
   const requestFile = (fileId: string) => {
@@ -777,10 +797,6 @@ export const WebRTCFileTransfer: React.FC = () => {
     console.log('=== 清空文件 ===');
     setSelectedFiles([]);
     setFileList([]);
-    // 只有在P2P连接建立且数据通道准备好时才发送清空消息
-    if (isConnected && connection.isPeerConnected && connection.getChannelState() === 'open' && pickupCode) {
-      sendFileList([]);
-    }
   };
 
   // 下载文件到本地
@@ -872,6 +888,7 @@ export const WebRTCFileTransfer: React.FC = () => {
             downloadedFiles={downloadedFiles}
             error={error}
             onReset={resetConnection}
+            pickupCode={pickupCode}
           />
         </div>
       )}
