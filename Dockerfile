@@ -1,65 +1,144 @@
-# ==============================================
-# 最简 Dockerfile - 专为 Docker 环境优化
-# ==============================================
 
-FROM node:20-alpine AS builder
+name: 🐳 Build and Push Docker Image
 
-# 国内镜像源优化
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
-    npm config set registry https://registry.npmmirror.com
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号 (例如: v1.0.5)'
+        required: true
+        default: 'v1.0.5'
+        type: string
+      push_to_hub:
+        description: '推送到 Docker Hub'
+        required: true
+        default: true
+        type: boolean
+      build_multiarch:
+        description: '构建多架构镜像 (amd64 + arm64)'
+        required: true
+        default: true
+        type: boolean
 
-# 安装必要工具
-RUN apk add --no-cache bash git curl wget make ca-certificates tzdata
+  # 推送标签时触发
+  push:
+    tags:
+      - 'v*.*.*'
 
-# 安装 Go
-ENV GO_VERSION=1.21.5
-RUN wget https://mirrors.aliyun.com/golang/go${GO_VERSION}.linux-amd64.tar.gz && \
-    tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz && \
-    rm go${GO_VERSION}.linux-amd64.tar.gz
+  # PR 时构建测试（不推送）
+  pull_request:
+    branches: [ main ]
 
-# Go 环境
-ENV PATH=/usr/local/go/bin:$PATH
-ENV GOPROXY=https://goproxy.cn,direct
+env:
+  REGISTRY: docker.io
+  IMAGE_NAME: matrixseven/file-transfer-go
 
-WORKDIR /app
+jobs:
+  build:
+    name: 🏗️ Build & Push Docker Image
+    runs-on: ubuntu-latest
+    
+    permissions:
+      contents: read
+      packages: write
+      
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
 
-# Go 依赖
-COPY go.mod go.sum ./
-RUN go mod download
+      - name: 🚀 Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+        
+      - name: 🏷️ Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ inputs.version }},enable=${{ github.event_name == 'workflow_dispatch' }}
 
-# 前端依赖和构建
-COPY chuan-next/package.json ./chuan-next/
-RUN cd chuan-next && npm install
+      - name: 🔧 Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/amd64,linux/arm64
+          driver-opts: |
+            network=host
+          buildkitd-flags: |
+            --allow-insecure-entitlement=network.host
 
-COPY chuan-next/ ./chuan-next/
-# 临时移除 API 目录进行 SSG 构建（模仿 build-fullstack.sh）
-RUN cd chuan-next && \
-    if [ -d "src/app/api" ]; then mv src/app/api /tmp/api-backup; fi && \
-    NEXT_EXPORT=true npm run build && \
-    if [ -d "/tmp/api-backup" ]; then mv /tmp/api-backup src/app/api; fi
+      - name: 🔑 Login to Docker Hub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.DOCKER_HUB_USERNAME }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-# Go 源码和构建
-COPY cmd/ ./cmd/
-COPY internal/ ./internal/
+      - name: 🐳 Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: ${{ (github.event_name == 'workflow_dispatch' && inputs.build_multiarch == true) || github.event_name == 'push' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
+          push: ${{ github.event_name != 'pull_request' && (inputs.push_to_hub != false) }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILDKIT_INLINE_CACHE=1
+          provenance: false
+          sbom: false
 
-# 嵌入前端文件
-RUN mkdir -p internal/web/frontend && \
-    cp -r chuan-next/out/* internal/web/frontend/
+      - name: 📊 Image digest
+        if: github.event_name != 'pull_request'
+        run: echo ${{ steps.build.outputs.digest }}
+        
+      - name: 🎉 Build Summary
+        if: always()
+        run: |
+          echo "## 🐳 Docker Build Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Image Details" >> $GITHUB_STEP_SUMMARY
+          echo "- **Registry**: ${{ env.REGISTRY }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image**: ${{ env.IMAGE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Tags**: ${{ steps.meta.outputs.tags }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Platforms**: ${{ (github.event_name == 'workflow_dispatch' && inputs.build_multiarch == true) || github.event_name == 'push' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🚀 Usage" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo "docker run -d -p 8080:8080 ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.version || 'latest' }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
-# 构建 Go 应用
-RUN CGO_ENABLED=0 go build -ldflags='-w -s' -o server ./cmd
+  security-scan:
+    name: 🔍 Security Scan
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.event_name != 'pull_request'
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🔍 Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          
+      - name: 📤 Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: 'trivy-results.sarif'
 
-# ==============================================
-
-FROM alpine:3.18
-
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
-    apk add --no-cache ca-certificates tzdata && \
-    adduser -D -s /bin/sh appuser
-
-WORKDIR /app
-COPY --from=builder --chown=appuser:appuser /app/server ./
-USER appuser
-
-EXPOSE 8080
-CMD ["./server"]
