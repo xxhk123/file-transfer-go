@@ -1,25 +1,27 @@
-
 # ==============================================
-# AMD64 Dockerfile - 使用官方 Go 基础镜像
+# AMD64 Dockerfile - 基于 build-fullstack.sh 流程
 # ==============================================
 
 # 前端构建阶段
 FROM node:20-alpine AS frontend-builder
 
-# 国内镜像源优化
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
-    npm config set registry https://registry.npmmirror.com
+# 安装 yarn
+RUN apk add --no-cache yarn
 
 WORKDIR /app/chuan-next
 
 # 前端依赖和构建
-COPY chuan-next/package.json ./
-RUN npm install
+COPY chuan-next/package.json chuan-next/yarn.lock ./
+RUN yarn install --frozen-lockfile --network-timeout 300000
 
 COPY chuan-next/ ./
-# 临时移除 API 目录进行 SSG 构建
+
+# 清理构建文件（模拟 build-fullstack.sh 的 clean_all 函数）
+RUN rm -rf .next out
+
+# 临时移除 API 目录进行 SSG 构建（模拟 build-fullstack.sh 的 build_frontend 函数）
 RUN if [ -d "src/app/api" ]; then mv src/app/api /tmp/api-backup; fi && \
-    NEXT_EXPORT=true npm run build && \
+    NEXT_EXPORT=true NODE_ENV=production NEXT_PUBLIC_BACKEND_URL= NEXT_PUBLIC_WS_URL= NEXT_PUBLIC_API_BASE_URL= SKIP_TYPESCRIPT_CHECK=true yarn build && \
     if [ -d "/tmp/api-backup" ]; then mv /tmp/api-backup src/app/api; fi
 
 # ==============================================
@@ -27,11 +29,10 @@ RUN if [ -d "src/app/api" ]; then mv src/app/api /tmp/api-backup; fi && \
 # Go 构建阶段
 FROM golang:1.21-alpine AS go-builder
 
-# 国内镜像源和代理优化
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
-    apk add --no-cache git ca-certificates tzdata
+# 安装构建依赖
+RUN apk add --no-cache git ca-certificates tzdata
 
-ENV GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=https://proxy.golang.org,direct
 ENV CGO_ENABLED=0
 ENV GOOS=linux
 ENV GOARCH=amd64
@@ -42,22 +43,26 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 
+# 清理嵌入的前端文件（模拟 build-fullstack.sh 的 copy_frontend_files 函数）
+RUN mkdir -p ./internal/web/frontend && \
+    find ./internal/web/frontend -type f ! -name ".gitkeep" -delete 2>/dev/null || true
+
 # 拷贝前端构建结果
-COPY --from=frontend-builder /app/chuan-next/out ./internal/web/frontend
+COPY --from=frontend-builder /app/chuan-next/out ./internal/web/frontend/
 
 # Go 源码
 COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 
-# 构建 Go 应用 - AMD64 架构
-RUN go build -ldflags='-w -s' -o server ./cmd
+# 构建 Go 应用 - AMD64 架构（模拟 build-fullstack.sh 的 build_backend 函数）
+RUN go build -ldflags='-s -w -extldflags '-static'' -o server ./cmd
 
 # ==============================================
 
+# 最终镜像
 FROM alpine:3.18
 
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories && \
-    apk add --no-cache ca-certificates tzdata && \
+RUN apk add --no-cache ca-certificates tzdata && \
     adduser -D -s /bin/sh appuser
 
 WORKDIR /app
@@ -66,4 +71,3 @@ USER appuser
 
 EXPOSE 8080
 CMD ["./server"]
-
