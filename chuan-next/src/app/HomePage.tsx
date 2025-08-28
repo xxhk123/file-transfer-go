@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Upload, MessageSquare, Monitor, Users } from 'lucide-react';
 import Hero from '@/components/Hero';
@@ -10,12 +9,20 @@ import { WebRTCTextImageTransfer } from '@/components/WebRTCTextImageTransfer';
 import DesktopShare from '@/components/DesktopShare';
 import WeChatGroup from '@/components/WeChatGroup';
 import { WebRTCUnsupportedModal } from '@/components/WebRTCUnsupportedModal';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { useWebRTCSupport } from '@/hooks/connection';
+import { useTabNavigation, TabType } from '@/hooks/ui';
 
 export default function HomePage() {
-  const searchParams = useSearchParams();
-  const [activeTab, setActiveTab] = useState('webrtc');
-  const [hasInitialized, setHasInitialized] = useState(false);
+  // 使用tab导航hook
+  const { 
+    activeTab, 
+    handleTabChange, 
+    getConnectionInfo, 
+    hasInitialized,
+    confirmDialogState,
+    closeConfirmDialog
+  } = useTabNavigation();
   
   // WebRTC 支持检测
   const {
@@ -26,34 +33,25 @@ export default function HomePage() {
     closeUnsupportedModal,
     showUnsupportedModalManually,
   } = useWebRTCSupport();
-  
-  // 根据URL参数设置初始标签（仅首次加载时）
-  useEffect(() => {
-    if (!hasInitialized) {
-      const urlType = searchParams.get('type');
-      
-      console.log('=== HomePage URL处理 ===');
-      console.log('URL type参数:', urlType);
-      console.log('所有搜索参数:', Object.fromEntries(searchParams.entries()));
-      
-      // 将旧的text类型重定向到message
-      if (urlType === 'text') {
-        console.log('检测到text类型，重定向到message标签页');
-        setActiveTab('message');
-      } else if (urlType === 'webrtc') {
-        // webrtc类型对应文件传输标签页
-        console.log('检测到webrtc类型，切换到webrtc标签页（文件传输）');
-        setActiveTab('webrtc');
-      } else if (urlType && ['message', 'desktop'].includes(urlType)) {
-        console.log('切换到对应标签页:', urlType);
-        setActiveTab(urlType);
-      } else {
-        console.log('没有有效的type参数，使用默认标签页：webrtc（文件传输）');
-      }
-      
-      setHasInitialized(true);
-    }
-  }, [searchParams, hasInitialized]);
+
+  // 桌面共享功能的占位符函数（保持向后兼容）
+  const handleStartSharing = async () => {
+    console.log('开始桌面共享');
+  };
+
+  const handleStopSharing = async () => {
+    console.log('停止桌面共享');
+  };
+
+  const handleJoinSharing = async (code: string) => {
+    console.log('加入桌面共享:', code);
+  };
+
+  // 处理Tabs组件的字符串参数
+  const handleTabChangeWrapper = (value: string) => {
+    // 类型转换并调用实际的处理函数
+    handleTabChange(value as TabType);
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
@@ -97,7 +95,7 @@ export default function HomePage() {
               </div>
             )}
 
-            <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+            <Tabs value={activeTab} onValueChange={handleTabChangeWrapper} className="w-full">
               {/* Tabs Navigation - 横向布局 */}
               <div className="mb-6">
                 <TabsList className="grid w-full grid-cols-4 max-w-2xl mx-auto h-auto bg-white/90 backdrop-blur-sm shadow-lg rounded-xl p-2 border border-slate-200">
@@ -178,6 +176,20 @@ export default function HomePage() {
           isOpen={showUnsupportedModal}
           onClose={closeUnsupportedModal}
           webrtcSupport={webrtcSupport}
+        />
+      )}
+
+      {/* 自定义确认对话框 */}
+      {confirmDialogState && (
+        <ConfirmDialog
+          isOpen={confirmDialogState.isOpen}
+          onClose={closeConfirmDialog}
+          onConfirm={confirmDialogState.onConfirm}
+          title={confirmDialogState.title}
+          message={confirmDialogState.message}
+          confirmText={confirmDialogState.confirmText}
+          cancelText={confirmDialogState.cancelText}
+          type={confirmDialogState.type}
         />
       )}
     </div>
