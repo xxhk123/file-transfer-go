@@ -115,40 +115,45 @@ export const useFileStateManager = ({
 
     console.log('=== selectedFiles变化，同步文件列表 ===', {
       selectedFilesCount: selectedFiles.length,
-      fileListCount: fileList.length,
       selectedFileNames: selectedFiles.map(f => f.name)
     });
 
-    // 根据selectedFiles创建新的文件信息列表
-    const newFileInfos: FileInfo[] = selectedFiles.map(file => {
-      // 尝试找到现有的文件信息，保持已有的状态
-      const existingFileInfo = fileList.find(info => info.name === file.name && info.size === file.size);
-      return existingFileInfo || {
-        id: generateFileId(),
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        status: 'ready' as const,
-        progress: 0
-      };
-    });
-
-    // 检查文件列表是否真正发生变化
-    const fileListChanged = 
-      newFileInfos.length !== fileList.length ||
-      newFileInfos.some(newFile => 
-        !fileList.find(oldFile => oldFile.name === newFile.name && oldFile.size === newFile.size)
-      );
-
-    if (fileListChanged) {
-      console.log('文件列表发生变化，更新:', {
-        before: fileList.map(f => f.name),
-        after: newFileInfos.map(f => f.name)
+    // 使用函数式更新获取当前fileList，避免依赖fileList
+    setFileList(currentFileList => {
+      // 根据selectedFiles创建新的文件信息列表
+      const newFileInfos: FileInfo[] = selectedFiles.map(file => {
+        // 尝试在当前fileList中找到现有的文件信息，保持已有的状态
+        const existingFileInfo = currentFileList.find(info => info.name === file.name && info.size === file.size);
+        return existingFileInfo || {
+          id: generateFileId(),
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          status: 'ready' as const,
+          progress: 0
+        };
       });
-      
-      setFileList(newFileInfos);
-    }
-  }, [selectedFiles, mode, pickupCode, fileList, generateFileId]);
+
+      // 检查文件列表是否真正发生变化
+      const fileListChanged = 
+        newFileInfos.length !== currentFileList.length ||
+        newFileInfos.some(newFile => 
+          !currentFileList.find(oldFile => oldFile.name === newFile.name && oldFile.size === newFile.size)
+        );
+
+      if (fileListChanged) {
+        console.log('文件列表发生变化，更新:', {
+          before: currentFileList.map(f => f.name),
+          after: newFileInfos.map(f => f.name)
+        });
+        
+        return newFileInfos;
+      }
+
+      // 如果没有变化，返回当前的fileList
+      return currentFileList;
+    });
+  }, [selectedFiles, mode, pickupCode, generateFileId]); // 移除fileList依赖，避免无限循环
 
   return {
     selectedFiles,

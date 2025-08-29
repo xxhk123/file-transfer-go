@@ -83,7 +83,7 @@ export const WebRTCFileTransfer: React.FC = () => {
     isPeerConnected: connection.isPeerConnected
   });
 
-  const { joinRoom: originalJoinRoom, isJoiningRoom } = useRoomConnection({
+  const { joinRoom: originalJoinRoom } = useRoomConnection({
     connect,
     isConnecting,
     isConnected
@@ -264,28 +264,33 @@ export const WebRTCFileTransfer: React.FC = () => {
           return;
         }
 
+        console.log('当前选中的文件列表:', selectedFiles.map(f => f.name));
+        
         // 在发送方的selectedFiles中查找对应文件
         const file = selectedFiles.find(f => f.name === fileName);
         
         if (!file) {
           console.error('找不到匹配的文件:', fileName);
+          console.log('可用文件:', selectedFiles.map(f => `${f.name} (${f.size} bytes)`));
           showToast(`无法找到文件: ${fileName}`, "error");
           return;
         }
         
         console.log('找到匹配文件，开始发送:', file.name, 'ID:', fileId, '文件大小:', file.size);
         
-        // 更新发送方文件状态为downloading
+        // 更新发送方文件状态为downloading - 统一使用updateFileStatus
         updateFileStatus(fileId, 'downloading', 0);
         
         // 发送文件
         try {
           sendFile(file, fileId);
+          
+          // 移除不必要的Toast - 传输开始状态在UI中已经显示
         } catch (sendError) {
           console.error('发送文件失败:', sendError);
           showToast(`发送文件失败: ${fileName}`, "error");
           
-          // 重置文件状态
+          // 重置文件状态 - 统一使用updateFileStatus
           updateFileStatus(fileId, 'ready', 0);
         }
       } else {
@@ -340,86 +345,7 @@ export const WebRTCFileTransfer: React.FC = () => {
     }
   }, [error, mode, showToast, lastError]);
 
-  // 处理文件接收
-  useEffect(() => {
-    const cleanup = onFileReceived((fileData: { id: string; file: File }) => {
-      console.log('=== 接收到文件 ===');
-      console.log('文件:', fileData.file.name, 'ID:', fileData.id);
-      
-      // 更新下载的文件
-      setDownloadedFiles(prev => new Map(prev.set(fileData.id, fileData.file)));
-      
-      // 更新文件状态
-      setFileList(prev => prev.map(item => 
-        item.id === fileData.id 
-          ? { ...item, status: 'completed' as const, progress: 100 }
-          : item
-      ));
-      
-      // 移除不必要的Toast - 文件完成状态在UI中已经显示
-    });
 
-    return cleanup;
-  }, [onFileReceived]);
-
-  // 处理文件请求（发送方监听）
-  useEffect(() => {
-    const cleanup = onFileRequested((fileId: string, fileName: string) => {
-      console.log('=== 收到文件请求 ===');
-      console.log('文件:', fileName, 'ID:', fileId, '当前模式:', mode);
-      
-      if (mode === 'send') {
-        // 检查连接状态
-        if (!isConnected || error) {
-          console.log('连接已断开，无法发送文件');
-          showToast('连接已断开，无法发送文件', "error");
-          return;
-        }
-
-        console.log('当前选中的文件列表:', selectedFiles.map(f => f.name));
-        
-        // 在发送方的selectedFiles中查找对应文件
-        const file = selectedFiles.find(f => f.name === fileName);
-        
-        if (!file) {
-          console.error('找不到匹配的文件:', fileName);
-          console.log('可用文件:', selectedFiles.map(f => `${f.name} (${f.size} bytes)`));
-          showToast(`无法找到文件: ${fileName}`, "error");
-          return;
-        }
-        
-        console.log('找到匹配文件，开始发送:', file.name, 'ID:', fileId, '文件大小:', file.size);
-        
-        // 更新发送方文件状态为downloading
-        setFileList(prev => prev.map(item => 
-          item.id === fileId || item.name === fileName
-            ? { ...item, status: 'downloading' as const, progress: 0 }
-            : item
-        ));
-        
-        // 发送文件
-        try {
-          sendFile(file, fileId);
-          
-          // 移除不必要的Toast - 传输开始状态在UI中已经显示
-        } catch (sendError) {
-          console.error('发送文件失败:', sendError);
-          showToast(`发送文件失败: ${fileName}`, "error");
-          
-          // 重置文件状态
-          setFileList(prev => prev.map(item => 
-            item.id === fileId || item.name === fileName
-              ? { ...item, status: 'ready' as const, progress: 0 }
-              : item
-          ));
-        }
-      } else {
-        console.warn('接收模式下收到文件请求，忽略');
-      }
-    });
-
-    return cleanup;
-  }, [onFileRequested, mode, selectedFiles, sendFile, isConnected, error]);
 
   // 监听连接状态变化和清理传输状态
   useEffect(() => {

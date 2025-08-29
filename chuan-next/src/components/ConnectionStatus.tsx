@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { cn } from '@/lib/utils';
 import { useWebRTCStore } from '@/hooks/index';
 
@@ -14,7 +14,7 @@ interface ConnectionStatusProps {
 }
 
 // 连接状态枚举
-const getConnectionStatus = (connection: any, currentRoom: any) => {
+const getConnectionStatus = (connection: { isWebSocketConnected?: boolean; isPeerConnected?: boolean; isConnecting?: boolean; error?: string | null }, currentRoom: { code: string; role: 'sender' | 'receiver' } | null) => {
   const isWebSocketConnected = connection?.isWebSocketConnected || false;
   const isPeerConnected = connection?.isPeerConnected || false;
   const isConnecting = connection?.isConnecting || false;
@@ -116,7 +116,7 @@ const StatusIcon = ({ type, className = 'w-3 h-3' }: { type: string; className?:
 };
 
 // 获取连接状态文字描述
-const getConnectionStatusText = (connection: any) => {
+const getConnectionStatusText = (connection: { isWebSocketConnected?: boolean; isPeerConnected?: boolean; isConnecting?: boolean; error?: string | null }) => {
   const isWebSocketConnected = connection?.isWebSocketConnected || false;
   const isPeerConnected = connection?.isPeerConnected || false;
   const isConnecting = connection?.isConnecting || false;
@@ -155,12 +155,14 @@ export function ConnectionStatus(props: ConnectionStatusProps) {
     error: webrtcState.error,
   };
   
+  const isConnected = webrtcState.isWebSocketConnected && webrtcState.isPeerConnected;
+  
   // 如果是内联模式，只返回状态文字
   if (inline) {
     return <span className={cn('text-sm text-slate-600', className)}>{getConnectionStatusText(connection)}</span>;
   }
   
-  const status = getConnectionStatus(connection, currentRoom);
+  const status = getConnectionStatus(connection, currentRoom ?? null);
 
   if (compact) {
     return (
@@ -244,7 +246,7 @@ export function ConnectionStatus(props: ConnectionStatusProps) {
 }
 
 // 简化版本的 Hook，用于快速集成 - 现在已经不需要了，但保留兼容性
-export function useConnectionStatus(webrtcConnection?: any) {
+export function useConnectionStatus(webrtcConnection?: { isWebSocketConnected?: boolean; isPeerConnected?: boolean; isConnecting?: boolean; currentRoom?: { code: string; role: 'sender' | 'receiver' } | null; error?: string | null }) {
   // 这个hook现在不再需要，因为ConnectionStatus组件直接使用底层连接
   // 但为了向后兼容，保留这个接口
   return useMemo(() => ({

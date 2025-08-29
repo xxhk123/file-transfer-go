@@ -6,26 +6,18 @@ import { Button } from '@/components/ui/button';
 import { Share, Monitor } from 'lucide-react';
 import  WebRTCDesktopReceiver from '@/components/webrtc/WebRTCDesktopReceiver';
 import  WebRTCDesktopSender from '@/components/webrtc/WebRTCDesktopSender';
-import { useWebRTCStore } from '@/hooks/index';
 
 
 interface DesktopShareProps {
   // 保留向后兼容性的props（已废弃，但保留接口）
-  onStartSharing?: () => Promise<string>;
-  onStopSharing?: () => Promise<void>;
   onJoinSharing?: (code: string) => Promise<void>;
 }
 
 export default function DesktopShare({ 
-  onStartSharing, 
-  onStopSharing, 
   onJoinSharing 
 }: DesktopShareProps) {
   const [mode, setMode] = useState<'share' | 'view'>('share');
   
-  // 使用全局WebRTC状态
-  const webrtcState = useWebRTCStore();
-
   // 使用统一的URL处理器，带模式转换
   const { updateMode, getCurrentRoomCode } = useURLHandler({
     featureType: 'desktop',
@@ -44,9 +36,8 @@ export default function DesktopShare({
     return code;
   }, [getCurrentRoomCode]);
 
-  // 连接状态变化处理 - 现在不需要了，因为使用全局状态
-  const handleConnectionChange = useCallback((connection: any) => {
-    // 这个函数现在可能不需要了，但为了兼容现有的子组件接口，保留它
+  // 连接状态变化处理 - 为了兼容现有的子组件接口，保留它
+  const handleConnectionChange = useCallback((connection: { isConnected: boolean; isWebSocketConnected: boolean }) => {
     console.log('桌面共享连接状态变化:', connection);
   }, []);
 

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Upload, MessageSquare, Monitor, Users } from 'lucide-react';
 import Hero from '@/components/Hero';
@@ -18,8 +18,6 @@ export default function HomePage() {
   const { 
     activeTab, 
     handleTabChange, 
-    getConnectionInfo, 
-    hasInitialized,
     confirmDialogState,
     closeConfirmDialog
   } = useTabNavigation();
@@ -34,18 +32,6 @@ export default function HomePage() {
     showUnsupportedModalManually,
   } = useWebRTCSupport();
 
-  // 桌面共享功能的占位符函数（保持向后兼容）
-  const handleStartSharing = async () => {
-    console.log('开始桌面共享');
-  };
-
-  const handleStopSharing = async () => {
-    console.log('停止桌面共享');
-  };
-
-  const handleJoinSharing = async (code: string) => {
-    console.log('加入桌面共享:', code);
-  };
 
   // 处理Tabs组件的字符串参数
   const handleTabChangeWrapper = (value: string) => {

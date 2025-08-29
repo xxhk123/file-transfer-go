@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { WebRTCError, WebRTCMessage, ConnectionEvent, EventHandler } from './types';
+import { WebRTCError, ConnectionEvent, EventHandler } from './types';
 
 interface WebSocketManagerConfig {
   url: string;

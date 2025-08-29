@@ -43,6 +43,7 @@ export function detectWebRTCSupport(): WebRTCSupport {
       pc.close();
     }
   } catch (error) {
+    console.warn(error);
     missing.push('DataChannel');
   }
 
