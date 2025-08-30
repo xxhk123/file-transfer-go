@@ -76,8 +76,8 @@ jobs:
       - name: 🏗️ Set build platform
         id: platforms
         run: |
-          echo "platforms=linux/amd64" >> $GITHUB_OUTPUT
-
+          echo "platforms=linux/amd64,linux/arm64" >> $GITHUB_OUTPUT
+          
       - name: 🐳 Build and push Docker image
         uses: docker/build-push-action@v5
         with:
