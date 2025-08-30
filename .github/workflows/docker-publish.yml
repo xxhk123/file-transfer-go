@@ -23,9 +23,25 @@ jobs:
 
       - name: ⬇️ Download official Linux ARM64 binary
         run: |
-          # 替换下面 URL 为官方 Linux ARM64 二进制下载链接
-          curl -L -o server https://example.com/file-transfer-go-${{ github.event.inputs.version }}-linux-arm64.tar.gz
-          tar -xzf server
+          # 替换下面 URL 为官方 Linux ARM64 二进制或压缩包链接
+          BINARY_URL="https://example.com/file-transfer-go-${{ github.event.inputs.version }}-linux-arm64"
+          FILE_NAME="server_download"
+
+          curl -L -o $FILE_NAME $BINARY_URL
+
+          # 判断文件类型
+          FILE_TYPE=$(file $FILE_NAME)
+          echo "Downloaded file type: $FILE_TYPE"
+
+          if [[ $FILE_TYPE == *"gzip compressed data"* ]]; then
+            tar -xzf $FILE_NAME -C .
+          elif [[ $FILE_TYPE == *"Zip archive data"* ]]; then
+            unzip $FILE_NAME -d .
+          else
+            # 假设是直接二进制，重命名为 server
+            mv $FILE_NAME server
+          fi
+
           chmod +x server
 
       - name: 🐳 Build Docker image
