@@ -1,4 +1,4 @@
-name: 🐳 Build ARM64 Docker Image (RK3588 Ready)
+name: 🐳 Build ARM64 Docker Image
 
 on:
   workflow_dispatch:
@@ -11,40 +11,24 @@ on:
 
 jobs:
   build-arm64:
-    name: 🏗️ Build ARM64 Docker Image
     runs-on: ubuntu-latest
 
     steps:
       - name: 📥 Checkout code
         uses: actions/checkout@v4
 
+      - name: 🌐 Download official ARM64 binary
+        run: |
+          VERSION=${{ github.event.inputs.version }}
+          URL="https://github.com/username/file-transfer-go/releases/download/$VERSION/file-transfer-go-linux-arm64"
+          echo "Downloading ARM64 binary from $URL"
+          curl -L -o server $URL
+          chmod +x server
+
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: ⬇️ Download official Linux ARM64 binary
-        run: |
-          # 替换下面 URL 为官方 Linux ARM64 二进制或压缩包链接
-          BINARY_URL="https://example.com/file-transfer-go-${{ github.event.inputs.version }}-linux-arm64"
-          FILE_NAME="server_download"
-
-          curl -L -o $FILE_NAME $BINARY_URL
-
-          # 判断文件类型
-          FILE_TYPE=$(file $FILE_NAME)
-          echo "Downloaded file type: $FILE_TYPE"
-
-          if [[ $FILE_TYPE == *"gzip compressed data"* ]]; then
-            tar -xzf $FILE_NAME -C .
-          elif [[ $FILE_TYPE == *"Zip archive data"* ]]; then
-            unzip $FILE_NAME -d .
-          else
-            # 假设是直接二进制，重命名为 server
-            mv $FILE_NAME server
-          fi
-
-          chmod +x server
-
-      - name: 🐳 Build Docker image
+      - name: 🐳 Build ARM64 Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -52,15 +36,15 @@ jobs:
           platforms: linux/arm64
           push: false
           load: true
-          tags: file-transfer-go:arm64-${{ github.event.inputs.version }}
+          tags: file-transfer-go:arm64
 
-      - name: 📦 Save Docker image as TAR
+      - name: 📦 Save Docker image as artifact
         run: |
-          docker save file-transfer-go:arm64-${{ github.event.inputs.version }} -o file-transfer-go-arm64-${{ github.event.inputs.version }}.tar
+          docker save file-transfer-go:arm64 -o file-transfer-go-arm64.tar
+        shell: bash
 
-      - name: 📤 Upload image artifact
+      - name: 📤 Upload Docker image artifact
         uses: actions/upload-artifact@v4
         with:
           name: file-transfer-go-arm64
-          path: file-transfer-go-arm64-${{ github.event.inputs.version }}.tar
-          retention-days: 1
+          path: file-transfer-go-arm64.tar
