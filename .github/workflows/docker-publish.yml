@@ -1,7 +1,6 @@
-name: 🐳 Build ARM64 Docker Image
+name: 🐳 Build ARM64 Docker Image (RK3588 Ready)
 
 on:
-  # 手动触发
   workflow_dispatch:
     inputs:
       version:
@@ -22,23 +21,30 @@ jobs:
       - name: 🔧 Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: 🐳 Build ARM64 image (no push)
+      - name: ⬇️ Download official Linux ARM64 binary
+        run: |
+          # 替换下面 URL 为官方 Linux ARM64 二进制下载链接
+          curl -L -o server https://example.com/file-transfer-go-${{ github.event.inputs.version }}-linux-arm64.tar.gz
+          tar -xzf server
+          chmod +x server
+
+      - name: 🐳 Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/arm64
           push: false
-          load: true   # 把镜像加载到 GitHub runner 本地
-          tags: file-transfer-go:arm64
+          load: true
+          tags: file-transfer-go:arm64-${{ github.event.inputs.version }}
 
-      - name: 📦 Save Docker image as artifact
+      - name: 📦 Save Docker image as TAR
         run: |
-          docker save file-transfer-go:arm64 -o file-transfer-go-arm64.tar
-        shell: bash
+          docker save file-transfer-go:arm64-${{ github.event.inputs.version }} -o file-transfer-go-arm64-${{ github.event.inputs.version }}.tar
 
       - name: 📤 Upload image artifact
         uses: actions/upload-artifact@v4
         with:
           name: file-transfer-go-arm64
-          path: file-transfer-go-arm64.tar
+          path: file-transfer-go-arm64-${{ github.event.inputs.version }}.tar
+          retention-days: 1
